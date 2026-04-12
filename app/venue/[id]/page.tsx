@@ -7,7 +7,7 @@ import { NeighborhoodBadge } from "@/components/neighborhood-badge"
 import { EventCard } from "@/components/event-card"
 import { MobileNav } from "@/components/mobile-nav"
 
-export const revalidate = 3600
+export const dynamic = "force-dynamic"
 
 interface VenuePageProps {
   params: Promise<{ id: string }>

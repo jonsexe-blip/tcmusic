@@ -2,7 +2,7 @@ import { Suspense } from "react"
 import { getAllEvents, getTonightEvents, getWeekendEvents } from "@/lib/events"
 import EventsClient from "./EventsClient"
 
-export const revalidate = 3600
+export const dynamic = "force-dynamic"
 
 export default async function EventsPage() {
   const [allEvents, tonightEvents, weekendEvents] = await Promise.all([

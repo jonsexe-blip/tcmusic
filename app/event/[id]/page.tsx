@@ -20,7 +20,7 @@ import { MobileNav } from "@/components/mobile-nav"
 import { Button } from "@/components/ui/button"
 import { ShareButton } from "@/components/share-button"
 
-export const revalidate = 3600
+export const dynamic = "force-dynamic"
 
 interface EventPageProps {
   params: Promise<{ id: string }>
