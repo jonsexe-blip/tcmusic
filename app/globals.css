@@ -1,0 +1,101 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+/* Twin Cities Music Aggregator - Dark Editorial Theme */
+:root {
+  /* Dark theme by default - City Pages aesthetic */
+  --background: oklch(0.08 0 0);
+  --foreground: oklch(0.98 0 0);
+  --card: oklch(0.12 0 0);
+  --card-foreground: oklch(0.98 0 0);
+  --popover: oklch(0.1 0 0);
+  --popover-foreground: oklch(0.98 0 0);
+  --primary: oklch(0.98 0 0);
+  --primary-foreground: oklch(0.08 0 0);
+  --secondary: oklch(0.18 0 0);
+  --secondary-foreground: oklch(0.98 0 0);
+  --muted: oklch(0.18 0 0);
+  --muted-foreground: oklch(0.65 0 0);
+  --accent: oklch(0.7 0.2 350);
+  --accent-foreground: oklch(0.98 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.98 0 0);
+  --border: oklch(0.22 0 0);
+  --input: oklch(0.15 0 0);
+  --ring: oklch(0.7 0.2 350);
+  --radius: 0.5rem;
+  
+  /* Neighborhood colors */
+  --ne-mpls: #3B82F6;
+  --downtown-mpls: #A855F7;
+  --uptown: #EC4899;
+  --st-paul-downtown: #F97316;
+  --west-7th: #F59E0B;
+  --dinkytown: #84CC16;
+  --north-loop: #06B6D4;
+  --midway: #EF4444;
+  --south-mpls: #10B981;
+  --seward: #8B5CF6;
+  --highland-park: #14B8A6;
+  --suburbs: #64748B;
+}
+
+@theme inline {
+  --font-sans: 'Inter Tight', 'Inter', 'Geist', sans-serif;
+  --font-mono: 'Geist Mono', 'Geist Mono Fallback';
+  --font-display: 'Inter Tight', 'Impact', sans-serif;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  
+  /* Neighborhood colors for Tailwind */
+  --color-ne-mpls: var(--ne-mpls);
+  --color-downtown-mpls: var(--downtown-mpls);
+  --color-uptown: var(--uptown);
+  --color-st-paul: var(--st-paul-downtown);
+  --color-west-7th: var(--west-7th);
+  --color-dinkytown: var(--dinkytown);
+  --color-north-loop: var(--north-loop);
+  --color-midway: var(--midway);
+  --color-south-mpls: var(--south-mpls);
+  --color-seward: var(--seward);
+  --color-highland: var(--highland-park);
+  --color-suburbs: var(--suburbs);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+  
+  /* Sharp editorial typography */
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-sans tracking-tight;
+    font-weight: 800;
+  }
+}
