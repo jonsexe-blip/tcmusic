@@ -21,6 +21,8 @@ const nextConfig = {
       { protocol: "https", hostname: "www.dakotacooks.com" },
       // Spotify artist images
       { protocol: "https", hostname: "i.scdn.co" },
+      // Squarespace image CDN (theater venue scrapers)
+      { protocol: "https", hostname: "images.squarespace-cdn.com" },
     ],
   },
 }

@@ -33,6 +33,7 @@ export type Genre =
   | "comedy"
   | "sports"
   | "world"
+  | "theater"
 
 export type GenreMood = "heavy" | "chill" | "dancey" | "experimental" | "all"
 
@@ -111,4 +112,5 @@ export const genreMoodMap: Record<Genre, GenreMood> = {
   comedy: "chill",
   sports: "heavy",
   world: "chill",
+  theater: "chill",
 }

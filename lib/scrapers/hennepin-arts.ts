@@ -85,12 +85,12 @@ const GENRE_MAP: Record<string, Genre> = {
   "Classical": "classical",
   "Soul": "soul",
   "Comedy": "comedy",
-  "Theater": "classical",   // closest mapping
-  "Theatre": "classical",
-  "Dance": "classical",
-  "Ballet": "classical",
-  "Opera": "classical",
-  "Broadway": "classical",
+  "Theater": "theater",
+  "Theatre": "theater",
+  "Dance": "theater",
+  "Ballet": "theater",
+  "Opera": "theater",
+  "Broadway": "theater",
   "Family": "pop",
 }
 

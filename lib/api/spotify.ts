@@ -69,8 +69,10 @@ const SPOTIFY_GENRE_KEYWORDS: { keywords: string[]; genre: Genre }[] = [
   { keywords: ["jazz", "bebop", "swing", "bossa nova", "fusion jazz", "big band"], genre: "jazz" },
   // Blues
   { keywords: ["blues", "delta blues", "chicago blues", "texas blues"], genre: "blues" },
+  // Theater / performing arts
+  { keywords: ["theater", "theatre", "musical", "broadway", "cabaret", "show tunes", "opera", "ballet", "performing arts"], genre: "theater" },
   // Classical
-  { keywords: ["classical", "opera", "orchestra", "chamber", "symphony", "baroque", "contemporary classical", "broadway", "show tunes"], genre: "classical" },
+  { keywords: ["classical", "orchestra", "chamber", "symphony", "baroque", "contemporary classical"], genre: "classical" },
   // Folk / Americana
   { keywords: ["folk", "americana", "bluegrass", "singer-songwriter", "acoustic", "appalachian"], genre: "folk" },
   // Country

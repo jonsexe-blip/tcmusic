@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils"
 
 type ViewMode = "grid" | "list"
 type QuickFilter = "all" | "tonight" | "weekend"
-type CategoryFilter = "all" | "music" | "comedy" | "sports"
+type CategoryFilter = "all" | "music" | "comedy" | "sports" | "theater"
 
 const SESSION_KEY = "events-page-state"
 
@@ -61,9 +61,8 @@ export default function EventsClient({
   const searchParams = useSearchParams()
   const router = useRouter()
 
-  const [viewMode, setViewMode] = useState<ViewMode>(() =>
-    loadSavedState()?.viewMode ?? "grid"
-  )
+  // Initialize from URL params only (safe for SSR — no sessionStorage)
+  const [viewMode, setViewMode] = useState<ViewMode>("grid")
   const [selectedDate, setSelectedDate] = useState<string | undefined>(
     () => searchParams.get("date") ?? undefined
   )
@@ -71,22 +70,31 @@ export default function EventsClient({
     const p = searchParams.get("filter")
     if (p === "tonight") return "tonight"
     if (p === "weekend") return "weekend"
-    return loadSavedState()?.quickFilter ?? "all"
+    return "all"
   })
-  const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>(
-    () => loadSavedState()?.categoryFilter ?? "all"
-  )
+  const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all")
   const [showFilters, setShowFilters] = useState(false)
   const [filters, setFilters] = useState<FilterState>(() => {
-    // URL params take priority over saved state
     const neighborhoodParam = searchParams.get("neighborhood")
     if (neighborhoodParam) {
       const defaults = getDefaultFilters()
       defaults.neighborhoods = [neighborhoodParam as Neighborhood]
       return defaults
     }
-    return loadSavedState()?.filters ?? getDefaultFilters()
+    return getDefaultFilters()
   })
+
+  // After mount: restore saved state from sessionStorage (client-only, avoids hydration mismatch)
+  useEffect(() => {
+    const saved = loadSavedState()
+    if (!saved) return
+    setViewMode(saved.viewMode)
+    setCategoryFilter(saved.categoryFilter)
+    // Only restore filters/quickFilter if no URL param is overriding them
+    if (!searchParams.get("filter")) setQuickFilter(saved.quickFilter)
+    if (!searchParams.get("neighborhood")) setFilters(saved.filters)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Persist state to sessionStorage whenever it changes
   useEffect(() => {
@@ -123,6 +131,7 @@ export default function EventsClient({
       : baseEvents.filter((e) => {
           if (categoryFilter === "comedy") return e.genres.includes("comedy")
           if (categoryFilter === "sports") return e.genres.includes("sports")
+          if (categoryFilter === "theater") return e.genres.includes("theater")
           return e.genres.some((g) => MUSIC_GENRES.has(g))
         })
     const userFiltered = filterEvents(categoryFiltered, filters)
@@ -211,7 +220,7 @@ export default function EventsClient({
 
         {/* Category Filter */}
         <div className="flex items-center gap-2">
-          {(["all", "music", "comedy", "sports"] as const).map((cat) => (
+          {(["all", "music", "comedy", "sports", "theater"] as const).map((cat) => (
             <button
               key={cat}
               onClick={() => setCategoryFilter(cat)}

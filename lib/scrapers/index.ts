@@ -11,8 +11,11 @@ import { scrapeHennepinArts } from "./hennepin-arts"
 import { scrapeCedar } from "./cedar"
 import { scrapeBryantLakeBowl } from "./bryant-lake-bowl"
 import { scrapeParkway } from "./parkway"
+import { scrapeJungle } from "./jungle"
+import { scrapeParkSquare } from "./park-square"
+import { scrapeHistoryTheatre } from "./history-theatre"
 
-export { scrapeFirstAvenue, scrapeDakota, scrapeAcme, scrapeHennepinArts, scrapeCedar, scrapeBryantLakeBowl, scrapeParkway }
+export { scrapeFirstAvenue, scrapeDakota, scrapeAcme, scrapeHennepinArts, scrapeCedar, scrapeBryantLakeBowl, scrapeParkway, scrapeJungle, scrapeParkSquare, scrapeHistoryTheatre }
 
 /**
  * Run all scrapers in parallel and return the combined results.
@@ -28,6 +31,9 @@ export async function scrapeAllVenues(): Promise<Event[]> {
     scrapeCedar(),
     scrapeBryantLakeBowl(),
     scrapeParkway(),
+    scrapeJungle(),
+    scrapeParkSquare(),
+    scrapeHistoryTheatre(),
   ])
 
   const events: Event[] = []

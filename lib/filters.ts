@@ -27,7 +27,7 @@ export function filterEvents(events: Event[], filters: FilterState): Event[] {
     // Mood filter
     if (filters.mood !== "all") {
       // Comedy and sports have no mood — exclude them when a mood is active
-      if (event.genres.includes("comedy") || event.genres.includes("sports")) {
+      if (event.genres.includes("comedy") || event.genres.includes("sports") || event.genres.includes("theater")) {
         return false
       }
       // Check if any of the event's genres match the mood
@@ -187,6 +187,7 @@ export const genreDisplayNames: Record<Genre, string> = {
   comedy: "Comedy",
   sports: "Sports",
   world: "World",
+  theater: "Theater",
 }
 
 // Mood display names and descriptions
