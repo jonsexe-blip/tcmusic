@@ -2,9 +2,9 @@
  * Cedar Cultural Centre scraper
  * Source: https://www.eventbrite.com/o/the-cedar-cultural-center-20257335640
  *
- * The Eventbrite organizer page embeds a JSON-LD <script type="application/ld+json">
- * block of type ProfilePage containing an ItemList of Event objects — no JS
- * execution needed. Lists ~24 upcoming events per page.
+ * Eventbrite embeds a JSON-LD block in window.__SERVER_DATA__.jsonld (a direct
+ * top-level key). The array contains ListItem wrappers around Event objects.
+ * Falls back to <script type="application/ld+json"> for forward-compatibility.
  *
  * Venue: 416 Cedar Ave S, Minneapolis (Cedar-Riverside / Seward)
  * Genre: folk (closest match until a dedicated "world" genre is added)
@@ -109,6 +109,84 @@ function isUpcoming(dateStr: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Extract JSON-LD from window.__SERVER_DATA__.jsonld (Eventbrite's current format)
+// ---------------------------------------------------------------------------
+
+/**
+ * Eventbrite embeds structured data in a JS variable rather than a plain
+ * <script type="application/ld+json"> tag. The "jsonld" key sits at the top
+ * level of __SERVER_DATA__ and its value is a JSON array.
+ *
+ * We extract it by finding the start of the array and counting brackets to
+ * locate the matching close — this handles nested JSON without a full parse
+ * of the potentially-large __SERVER_DATA__ object.
+ */
+function extractServerDataJsonLd(html: string): unknown[] {
+  try {
+    const keyIdx = html.indexOf('"jsonld":')
+    if (keyIdx === -1) return []
+    const arrStart = html.indexOf('[', keyIdx)
+    if (arrStart === -1) return []
+    let depth = 0
+    let i = arrStart
+    for (; i < html.length; i++) {
+      const ch = html[i]
+      if (ch === '[') depth++
+      else if (ch === ']') {
+        depth--
+        if (depth === 0) break
+      }
+    }
+    return JSON.parse(html.slice(arrStart, i + 1)) as unknown[]
+  } catch {
+    return []
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Shared event processing
+// ---------------------------------------------------------------------------
+
+function processLdItems(items: Array<{ "@type": string; item?: LDEvent } | LDEvent>): Event[] {
+  const events: Event[] = []
+  for (const item of items) {
+    try {
+      // Items can be bare LDEvent or wrapped in { "@type": "ListItem", item: LDEvent }
+      const ev: LDEvent = ("item" in item && item.item) ? item.item : (item as LDEvent)
+      if (ev["@type"] !== "Event" || !ev.name || !ev.startDate) continue
+
+      const date = parseDate(ev.startDate)
+      if (!isUpcoming(date)) continue
+
+      const artist = ev.name.trim()
+      const description = ev.description
+        ? stripHtml(ev.description).slice(0, 300)
+        : `${artist} live at the Cedar Cultural Centre.`
+
+      events.push({
+        id: `cedar-${artist.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${date}`,
+        artist,
+        venue: CEDAR_VENUE,
+        date,
+        time: parseTime(ev.startDate),
+        price: parsePrice(ev.offers),
+        ageRestriction: "all-ages",
+        genres: ["world"],
+        mood: genreMoodMap["world"] ?? "chill",
+        ticketUrl: ev.url ?? ORGANIZER_URL,
+        imageUrl: getImageUrl(ev.image),
+        description,
+        popularity: 50,
+        isLocalArtist: false,
+      })
+    } catch {
+      // Skip malformed events
+    }
+  }
+  return events
+}
+
+// ---------------------------------------------------------------------------
 // Fetch & parse
 // ---------------------------------------------------------------------------
 
@@ -126,58 +204,47 @@ export async function scrapeCedar(): Promise<Event[]> {
   }
 
   const $ = cheerio.load(html)
-  const events: Event[] = []
+  let allEvents: Event[] = []
 
+  // Strategy 1: standard <script type="application/ld+json"> tags (legacy / future)
   $('script[type="application/ld+json"]').each((_, el) => {
     try {
       const data: LDProfilePage = JSON.parse($(el).html() ?? "")
-      if (data["@type"] !== "ProfilePage" || !data.mainEntity) return
-      if (data.mainEntity["@type"] !== "ItemList") return
-
-      const items = data.mainEntity.itemListElement ?? []
-
-      for (const item of items) {
-        try {
-          // Items can be bare LDEvent or wrapped in { "@type": "ListItem", item: LDEvent }
-          const ev: LDEvent = ("item" in item && item.item) ? item.item : (item as LDEvent)
-          if (ev["@type"] !== "Event" || !ev.name || !ev.startDate) continue
-
-          const date = parseDate(ev.startDate)
-          if (!isUpcoming(date)) continue
-
-          const artist = ev.name.trim()
-          const description = ev.description
-            ? stripHtml(ev.description).slice(0, 300)
-            : `${artist} live at the Cedar Cultural Centre.`
-
-          events.push({
-            id: `cedar-${artist.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${date}`,
-            artist,
-            venue: CEDAR_VENUE,
-            date,
-            time: parseTime(ev.startDate),
-            price: parsePrice(ev.offers),
-            ageRestriction: "all-ages",
-            genres: ["world"],
-            mood: genreMoodMap["world"] ?? "chill",
-            ticketUrl: ev.url ?? ORGANIZER_URL,
-            imageUrl: getImageUrl(ev.image),
-            description,
-            popularity: 50,
-            isLocalArtist: false,
-          })
-        } catch {
-          // Skip malformed events
-        }
+      if (data["@type"] === "ProfilePage" && data.mainEntity?.["@type"] === "ItemList") {
+        allEvents = allEvents.concat(
+          processLdItems(data.mainEntity.itemListElement ?? [])
+        )
       }
     } catch {
-      // Skip non-JSON or unrelated LD blocks
+      // skip
     }
   })
 
+  // Strategy 2: Eventbrite's current __SERVER_DATA__.jsonld embed
+  if (allEvents.length === 0) {
+    const ldItems = extractServerDataJsonLd(html)
+
+    // The array may contain bare ListItems (Events) or a ProfilePage wrapper
+    for (const item of ldItems) {
+      const obj = item as Record<string, unknown>
+      if (obj["@type"] === "ProfilePage") {
+        const mainEntity = obj.mainEntity as LDItemList | undefined
+        if (mainEntity?.["@type"] === "ItemList") {
+          allEvents = allEvents.concat(
+            processLdItems(mainEntity.itemListElement ?? [])
+          )
+        }
+      } else if (obj["@type"] === "ListItem" || obj["@type"] === "Event") {
+        allEvents = allEvents.concat(
+          processLdItems([obj as { "@type": string; item?: LDEvent } | LDEvent])
+        )
+      }
+    }
+  }
+
   // Deduplicate by id
   const seen = new Set<string>()
-  return events.filter((e) => {
+  return allEvents.filter((e) => {
     if (seen.has(e.id)) return false
     seen.add(e.id)
     return true
