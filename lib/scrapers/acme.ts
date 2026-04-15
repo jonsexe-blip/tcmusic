@@ -48,23 +48,25 @@ interface LDPlace {
 // ---------------------------------------------------------------------------
 
 function parseDate(isoDate: string): string {
-  // Convert to local date string "YYYY-MM-DD"
-  // startDate is UTC — show dates are US Central; treat date portion as local
-  const d = new Date(isoDate)
-  // Use UTC date to avoid off-by-one from timezone conversion
-  const y = d.getUTCFullYear()
-  const m = String(d.getUTCMonth() + 1).padStart(2, "0")
-  const day = String(d.getUTCDate()).padStart(2, "0")
-  return `${y}-${m}-${day}`
+  // en-CA gives "YYYY-MM-DD" format; use Central time so the date matches
+  // what's on the marquee, not the UTC equivalent (a UTC midnight can be
+  // the previous day in Chicago).
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Chicago",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(isoDate))
 }
 
 function parseTime(isoDate: string): string {
-  const d = new Date(isoDate)
-  const h = d.getUTCHours()
-  const min = d.getUTCMinutes()
-  const period = h >= 12 ? "PM" : "AM"
-  const hour = h % 12 || 12
-  return `${hour}:${String(min).padStart(2, "0")} ${period}`
+  // Seatengine stores times in UTC — convert to Central before displaying.
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Chicago",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(new Date(isoDate))
 }
 
 function stripHtml(html: string): string {
