@@ -438,18 +438,17 @@ function parsePage(html: string): Event[] {
 
 export async function scrapeFirstAvenue(): Promise<Event[]> {
   const now = new Date()
-  const thisMonth = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}01`
-  const nextMonthDate = new Date(now.getFullYear(), now.getMonth() + 1, 1)
-  const nextMonth = `${nextMonthDate.getFullYear()}${String(nextMonthDate.getMonth() + 1).padStart(2, "0")}01`
+  const monthPages = Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() + i, 1)
+    return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}01`
+  })
 
-  const [page1, page2] = await Promise.allSettled([
-    fetchPage(thisMonth),
-    fetchPage(nextMonth),
-  ])
+  const pageResults = await Promise.allSettled(monthPages.map(fetchPage))
 
   const events: Event[] = []
-  if (page1.status === "fulfilled") events.push(...parsePage(page1.value))
-  if (page2.status === "fulfilled") events.push(...parsePage(page2.value))
+  for (const result of pageResults) {
+    if (result.status === "fulfilled") events.push(...parsePage(result.value))
+  }
 
   // Deduplicate by id
   const seen = new Set<string>()
