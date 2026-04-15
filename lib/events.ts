@@ -51,7 +51,11 @@ export const getAllEvents = unstable_cache(
       scrapeAllVenues(),
     ])
 
-    const tmEvents = tmRaw.map(normalizeTMEvent).filter(isUpcoming)
+    const PRIVATE_EVENT = /^\s*(private\s+event|private\s+party|closed\s+event|not\s+available)\s*$/i
+
+    const tmEvents = tmRaw.map(normalizeTMEvent)
+      .filter(isUpcoming)
+      .filter((e) => !PRIVATE_EVENT.test(e.artist))
 
     // Merge scrapers into TM results, deduplicating by artist+date
     const merged = mergeWithPrimary(tmEvents, scrapedEvents.filter(isUpcoming))
