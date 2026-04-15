@@ -107,15 +107,25 @@ export async function runAllScrapers(): Promise<ScraperResult[]> {
 // Email alert — fire-and-forget via Resend REST API
 // ---------------------------------------------------------------------------
 
+// Track the last date an alert was sent — prevents duplicate emails within the
+// same warm serverless instance. Resets naturally on cold start (new day).
+let lastAlertDate: string | null = null
+
 /**
  * Sends an email when always-active scrapers return 0 events or error.
  * Requires RESEND_API_KEY and ALERT_EMAIL_TO env vars; silently no-ops if absent.
+ * Sends at most one email per calendar day (UTC) per warm instance.
  * Never throws — failure to send an alert must not affect the data pipeline.
  */
 export async function sendEmailAlert(broken: ScraperResult[]): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY
   const to = process.env.ALERT_EMAIL_TO
   if (!apiKey || !to || broken.length === 0) return
+
+  // One alert per day — skip if we already sent one today
+  const today = new Date().toISOString().slice(0, 10)
+  if (lastAlertDate === today) return
+  lastAlertDate = today
 
   const from = process.env.ALERT_EMAIL_FROM ?? "onboarding@resend.dev"
   const count = broken.length
