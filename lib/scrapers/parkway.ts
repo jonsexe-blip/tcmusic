@@ -61,9 +61,12 @@ export async function scrapeParkway(): Promise<Event[]> {
     try {
       const $el = $(el)
 
-      // Title
-      const title = $el.find(".eventlist-title-link").first().text().trim()
+      // Title and ticket URL — .eventlist-title-link is the <a> tag itself
+      const titleEl = $el.find("a.eventlist-title-link").first()
+      const title = titleEl.text().trim()
       if (!title) return
+      const href = titleEl.attr("href") ?? ""
+      const ticketUrl = href.startsWith("http") ? href : `${BASE_URL}${href}`
 
       // Categories
       const cats = $el.find(".eventlist-cats a").map((_, a) => $(a).text().trim().toLowerCase()).get()
@@ -81,13 +84,6 @@ export async function scrapeParkway(): Promise<Event[]> {
 
       // Time
       const time = $el.find("time.event-time-12hr-start").first().text().trim() || "TBA"
-
-      // Ticket URL
-      const href = $el.find(".eventlist-title-link").first().closest("a").attr("href")
-        ?? $el.find("a.eventlist-title-link").first().attr("href")
-        ?? $el.find("a[href*='/all-events/']").first().attr("href")
-        ?? ""
-      const ticketUrl = href.startsWith("http") ? href : `${BASE_URL}${href}`
 
       // Image (Squarespace lazy-loads via data-src)
       const imgSrc = $el.find("a.eventlist-column-thumbnail img").first().attr("data-src") ?? ""
