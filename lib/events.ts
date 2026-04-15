@@ -141,7 +141,20 @@ export const getAllEvents = unstable_cache(
       return Object.keys(updates).length > 0 ? { ...e, ...updates } : e
     })
 
-    return sortByDate(enriched)
+    // Final dedup pass — catches TM returning the same show twice (common for
+    // First Avenue sub-venues) and any artist-name mismatches that slipped
+    // through mergeWithPrimary. Key on venue name (not ID) since TM and
+    // scrapers assign different IDs to the same physical venue.
+    // Keep the first occurrence; TM events come first so they win on conflict.
+    const seenFinal = new Set<string>()
+    const deduped = enriched.filter((e) => {
+      const key = `${e.artist.toLowerCase().trim()}|${e.date}|${e.venue.name.toLowerCase().trim()}`
+      if (seenFinal.has(key)) return false
+      seenFinal.add(key)
+      return true
+    })
+
+    return sortByDate(deduped)
   },
   ["all-events"],
   { revalidate: 3600 }
