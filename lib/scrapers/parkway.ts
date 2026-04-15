@@ -14,7 +14,7 @@
  */
 
 import * as cheerio from "cheerio"
-import type { Event, Genre, Venue } from "../types"
+import type { Event, Venue } from "../types"
 import { genreMoodMap } from "../types"
 
 const EVENTS_URL = "https://theparkwaytheater.com/all-events-summary"
@@ -28,19 +28,10 @@ const PARKWAY_VENUE: Venue = {
   capacity: "medium",
 }
 
-// Categories to skip (film screenings, private events, etc.)
-const SKIP_CATEGORIES = new Set(["movies", "films", "film", "movie", "private"])
-
 function isUpcoming(dateStr: string): boolean {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   return new Date(dateStr + "T00:00:00") >= today
-}
-
-function mapCategories(cats: string[]): Genre[] {
-  const lower = cats.map((c) => c.toLowerCase())
-  if (lower.some((c) => c.includes("comedy"))) return ["comedy"]
-  return ["indie"]
 }
 
 /** Parse a short date string like "Apr 14" or "April 14, 2026" into YYYY-MM-DD */
@@ -65,13 +56,6 @@ function parseShortDate(text: string): string | null {
   return `${year}-${month}-${day}`
 }
 
-function parseTimeText(text: string): string {
-  // "7:30 PM – 10:30 PM" → "7:30 PM"
-  // "7:30PM" → "7:30 PM"
-  const m = text.match(/(\d{1,2}:\d{2}\s*[AP]M)/i)
-  if (!m) return "TBA"
-  return m[1]!.replace(/([AP]M)/i, " $1").replace(/\s+/g, " ").trim()
-}
 
 export async function scrapeParkway(): Promise<Event[]> {
   let html: string
@@ -89,127 +73,59 @@ export async function scrapeParkway(): Promise<Event[]> {
   const $ = cheerio.load(html)
   const events: Event[] = []
 
-  // ---------------------------------------------------------------------------
-  // Strategy 1: Squarespace standard eventlist markup
-  //   article.eventlist-event (or li.eventlist-event)
-  //   time[datetime] → ISO date, .eventlist-title a → title, .eventlist-meta-time → time
-  // ---------------------------------------------------------------------------
-  const eventEls = $("article.eventlist-event, li.eventlist-event, .eventlist-event").toArray()
+  // The /all-events-summary page uses Squarespace's summary thumbnail template:
+  //   .summary-thumbnail-outer-container  — one per event
+  //   a.summary-thumbnail-container       — the link, carries data-title and href
+  //   .summary-thumbnail-event-date-month — "Apr"
+  //   .summary-thumbnail-event-date-day   — "14"
+  //   .summary-thumbnail-image            — event image
 
-  if (eventEls.length > 0) {
-    for (const el of eventEls) {
-      try {
-        const $el = $(el)
+  $(".summary-thumbnail-outer-container").each((_, el) => {
+    try {
+      const $el = $(el)
+      const linkEl = $el.find("a.summary-thumbnail-container").first()
 
-        // Title
-        const titleEl = $el.find(".eventlist-title a, h1 a, h2 a").first()
-        const title = titleEl.text().trim()
-        if (!title) continue
+      // Title lives in data-title, not link text
+      const title = (linkEl.attr("data-title") ?? "").trim()
+      if (!title || title.length < 2) return
 
-        // Categories — skip film events
-        const categories = $el.find(".eventlist-cats a, .event-cats a, [class*='cat'] a")
-          .map((_, a) => $(a).text().trim()).get()
-        if (categories.map((c) => c.toLowerCase()).some((c) => SKIP_CATEGORIES.has(c))) continue
+      // Skip film screenings
+      if (/\bfilm\b|\bmovie\b|\bscreening\b|\b35mm\b/i.test(title)) return
 
-        // Date — prefer datetime attribute on <time>, fallback to text
-        let date: string | null = null
-        const timeEl = $el.find("time[datetime]").first()
-        const datetimeAttr = timeEl.attr("datetime") ?? ""
-        if (datetimeAttr.match(/^\d{4}-\d{2}-\d{2}/)) {
-          date = datetimeAttr.slice(0, 10)
-        } else {
-          const dateText = $el.find(".eventlist-datetag, .event-date, time").first().text().trim()
-          date = parseShortDate(dateText)
-        }
-        if (!date || !isUpcoming(date)) continue
+      // Date from month + day spans
+      const month = $el.find(".summary-thumbnail-event-date-month").first().text().trim()
+      const day = $el.find(".summary-thumbnail-event-date-day").first().text().trim()
+      const date = parseShortDate(`${month} ${day}`)
+      if (!date || !isUpcoming(date)) return
 
-        // Time
-        const timeText = $el.find(".eventlist-meta-time, .event-time, time").last().text().trim()
-        const time = parseTimeText(timeText)
+      // Ticket URL
+      const href = linkEl.attr("href") ?? ""
+      const ticketUrl = href.startsWith("http") ? href : `${BASE_URL}${href}`
 
-        // Ticket URL
-        const href = titleEl.attr("href") ?? ""
-        const ticketUrl = href.startsWith("http") ? href : `${BASE_URL}${href}`
+      // Image
+      const imgSrc = $el.find("img").first().attr("data-src") ?? $el.find("img").first().attr("src") ?? ""
+      const imageUrl = imgSrc || "/placeholder-event.jpg"
 
-        // Description
-        const description =
-          $el.find(".eventlist-excerpt, p").first().text().trim().slice(0, 300)
-          || `${title} at the Parkway Theater.`
-
-        const genres = mapCategories(categories)
-        const mood = genreMoodMap[genres[0]] ?? "chill"
-
-        events.push({
-          id: `parkway-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${date}`,
-          artist: title,
-          venue: PARKWAY_VENUE,
-          date,
-          time,
-          price: "tbd",
-          ageRestriction: "all-ages",
-          genres,
-          mood,
-          ticketUrl,
-          imageUrl: "/placeholder-event.jpg",
-          description,
-          popularity: 50,
-          isLocalArtist: false,
-        })
-      } catch {
-        // skip
-      }
+      events.push({
+        id: `parkway-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${date}`,
+        artist: title,
+        venue: PARKWAY_VENUE,
+        date,
+        time: "TBA",
+        price: "tbd",
+        ageRestriction: "all-ages",
+        genres: ["indie"],
+        mood: genreMoodMap["indie"],
+        ticketUrl,
+        imageUrl,
+        description: `${title} at the Parkway Theater.`,
+        popularity: 50,
+        isLocalArtist: false,
+      })
+    } catch {
+      // skip
     }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Strategy 2: link-harvest fallback — grab all /all-events/ links and infer
-  // date/title from surrounding text. Used when Squarespace renders with a
-  // non-standard template or the standard classes aren't present.
-  // ---------------------------------------------------------------------------
-  if (events.length === 0) {
-    const seen = new Set<string>()
-    $("a[href*='/all-events/']").each((_, el) => {
-      try {
-        const $el = $(el)
-        const href = $el.attr("href") ?? ""
-        if (!href.match(/\/all-events\/.+/) || seen.has(href)) return
-        seen.add(href)
-
-        const title = $el.text().trim() || $el.find("h1,h2,h3").first().text().trim()
-        if (!title || title.length < 3) return
-
-        // Try to find a date in surrounding text (parent, siblings)
-        const containerText = $el.closest("article, li, div").text()
-        const date = parseShortDate(containerText)
-        if (!date || !isUpcoming(date)) return
-
-        // Skip obvious film events
-        if (/\bfilm\b|\bmovie\b|\bscreening\b/i.test(title)) return
-
-        const ticketUrl = href.startsWith("http") ? href : `${BASE_URL}${href}`
-        const time = parseTimeText(containerText)
-
-        events.push({
-          id: `parkway-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${date}`,
-          artist: title,
-          venue: PARKWAY_VENUE,
-          date,
-          time,
-          price: "tbd",
-          ageRestriction: "all-ages",
-          genres: ["indie"],
-          mood: genreMoodMap["indie"],
-          ticketUrl,
-          imageUrl: "/placeholder-event.jpg",
-          description: `${title} at the Parkway Theater.`,
-          popularity: 50,
-          isLocalArtist: false,
-        })
-      } catch {
-        // skip
-      }
-    })
-  }
+  })
 
   // Deduplicate by id
   const deduped = new Set<string>()
