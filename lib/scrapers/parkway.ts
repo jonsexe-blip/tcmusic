@@ -2,12 +2,12 @@
  * Parkway Theater scraper
  * Source: https://theparkwaytheater.com/all-events-summary
  *
- * Squarespace eventlist markup: article.eventlist-event containers with
- * time.event-date[datetime] for dates, .eventlist-title-link for titles,
- * and .eventlist-cats for category filtering.
- *
- * Pure film screenings (category "Movies" without "Live Events") are skipped.
- * Hybrid events like silent film + live score are included.
+ * Squarespace summary-block layout. Each event is a:
+ *   div.summary-item.summary-item-record-type-event
+ *     a.summary-thumbnail-container[data-title, href]  — title + URL
+ *     span.summary-thumbnail-event-date-month          — "Apr"
+ *     span.summary-thumbnail-event-date-day            — "25"
+ *     img                                              — event image
  *
  * Venue: 4814 Chicago Ave, Minneapolis (South Minneapolis)
  */
@@ -27,6 +27,11 @@ const PARKWAY_VENUE: Venue = {
   capacity: "medium",
 }
 
+const MONTH_MAP: Record<string, string> = {
+  jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06",
+  jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12",
+}
+
 function isUpcoming(dateStr: string): boolean {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
@@ -38,7 +43,7 @@ export async function scrapeParkway(): Promise<Event[]> {
   try {
     const res = await fetch(EVENTS_URL, {
       cache: "no-store",
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; TwinCitiesMusic/1.0)" },
+      headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" },
     })
     if (!res.ok) throw new Error(`Parkway fetch failed: ${res.status}`)
     html = await res.text()
@@ -49,66 +54,54 @@ export async function scrapeParkway(): Promise<Event[]> {
   const $ = cheerio.load(html)
   const events: Event[] = []
 
-  // Squarespace eventlist structure:
-  //   article.eventlist-event           — one per event
-  //   .eventlist-title-link             — event title text
-  //   time.event-date[datetime]         — ISO date in datetime attr ("2026-04-14")
-  //   time.event-time-12hr-start        — show time text ("7:30 PM")
-  //   .eventlist-cats a                 — category tags
-  //   a.eventlist-column-thumbnail img  — event image (data-src)
-
-  $("article.eventlist-event").each((_, el) => {
+  $(".summary-item-record-type-event").each((_, el) => {
     try {
       const $el = $(el)
+      const linkEl = $el.find("a.summary-thumbnail-container").first()
 
-      // Title and ticket URL — .eventlist-title-link is the <a> tag itself
-      const titleEl = $el.find("a.eventlist-title-link").first()
-      const title = titleEl.text().trim()
-      if (!title) return
-      const href = titleEl.attr("href") ?? ""
-      const ticketUrl = href.startsWith("http") ? href : `${BASE_URL}${href}`
+      // Title is in data-title attribute — link text contains only date/image
+      const title = (linkEl.attr("data-title") ?? "").trim()
+      if (!title || title.length < 2) return
 
-      // Categories
-      const cats = $el.find(".eventlist-cats a").map((_, a) => $(a).text().trim().toLowerCase()).get()
+      // Skip pure film screenings by title heuristic
+      // (Parkway doesn't expose categories in the summary view)
+      if (/\b(35mm|16mm)\b/i.test(title) && !/\blive\b|\bconcert\b|\bband\b/i.test(title)) return
 
-      // Skip pure film screenings — but keep "Live Events" that happen to also be tagged Movies
-      const isMovie = cats.includes("movies") || cats.includes("film") || cats.includes("films")
-      const isLive = cats.includes("live events") || cats.includes("live music") || cats.includes("comedy")
-      if (isMovie && !isLive) return
+      // Date from month + day spans
+      const monthText = $el.find(".summary-thumbnail-event-date-month").first().text().trim().toLowerCase().slice(0, 3)
+      const dayText = $el.find(".summary-thumbnail-event-date-day").first().text().trim()
+      const month = MONTH_MAP[monthText]
+      if (!month || !dayText) return
 
-      // Date from datetime attribute
-      const dateAttr = $el.find("time.event-date").first().attr("datetime") ?? ""
-      if (!dateAttr.match(/^\d{4}-\d{2}-\d{2}/)) return
-      const date = dateAttr.slice(0, 10)
+      const now = new Date()
+      const eventMonth = parseInt(month, 10)
+      const year = eventMonth < now.getMonth() + 1
+        ? now.getFullYear() + 1
+        : now.getFullYear()
+      const date = `${year}-${month}-${dayText.padStart(2, "0")}`
       if (!isUpcoming(date)) return
 
-      // Time
-      const time = $el.find("time.event-time-12hr-start").first().text().trim() || "TBA"
+      // URL
+      const href = linkEl.attr("href") ?? ""
+      const ticketUrl = href.startsWith("http") ? href : `${BASE_URL}${href}`
 
-      // Image (Squarespace lazy-loads via data-src)
-      const imgSrc = $el.find("a.eventlist-column-thumbnail img").first().attr("data-src") ?? ""
+      // Image
+      const imgSrc = $el.find("img").first().attr("data-src") ?? $el.find("img").first().attr("src") ?? ""
       const imageUrl = imgSrc || "/placeholder-event.jpg"
-
-      // Description
-      const description =
-        $el.find(".eventlist-excerpt p").first().text().trim().slice(0, 300)
-        || `${title} at the Parkway Theater.`
-
-      const genre = cats.includes("comedy") ? "comedy" : "indie"
 
       events.push({
         id: `parkway-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${date}`,
         artist: title,
         venue: PARKWAY_VENUE,
         date,
-        time,
+        time: "TBA",
         price: "tbd",
         ageRestriction: "all-ages",
-        genres: [genre],
-        mood: genreMoodMap[genre],
+        genres: ["indie"],
+        mood: genreMoodMap["indie"],
         ticketUrl,
         imageUrl,
-        description,
+        description: `${title} at the Parkway Theater.`,
         popularity: 50,
         isLocalArtist: false,
       })
@@ -117,7 +110,6 @@ export async function scrapeParkway(): Promise<Event[]> {
     }
   })
 
-  // Deduplicate by id
   const seen = new Set<string>()
   return events.filter((e) => {
     if (seen.has(e.id)) return false

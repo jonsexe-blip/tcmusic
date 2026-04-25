@@ -1,21 +1,20 @@
 /**
  * Cedar Cultural Centre scraper
- * Source: https://www.eventbrite.com/o/the-cedar-cultural-center-20257335640
+ * Source: https://www.thecedar.org/events
  *
- * Eventbrite embeds a JSON-LD block in window.__SERVER_DATA__.jsonld (a direct
- * top-level key). The array contains ListItem wrappers around Event objects.
- * Falls back to <script type="application/ld+json"> for forward-compatibility.
+ * Cedar's own website uses a standard HTML event listing with div.event-item
+ * containers. Previously scraped Eventbrite, but Eventbrite removed all
+ * JSON-LD and structured data from their pages.
  *
  * Venue: 416 Cedar Ave S, Minneapolis (Cedar-Riverside / Seward)
- * Genre: folk (closest match until a dedicated "world" genre is added)
  */
 
 import * as cheerio from "cheerio"
 import type { Event, Venue } from "../types"
 import { genreMoodMap } from "../types"
 
-const ORGANIZER_URL =
-  "https://www.eventbrite.com/o/the-cedar-cultural-center-20257335640"
+const BASE_URL = "https://www.thecedar.org"
+const EVENTS_URL = `${BASE_URL}/events`
 
 const CEDAR_VENUE: Venue = {
   id: "cedar-cultural-centre",
@@ -26,80 +25,35 @@ const CEDAR_VENUE: Venue = {
 }
 
 // ---------------------------------------------------------------------------
-// JSON-LD types (Eventbrite ProfilePage / ItemList shape)
-// ---------------------------------------------------------------------------
-
-interface LDOffer {
-  lowPrice?: number | string
-  highPrice?: number | string
-  price?: number | string
-  priceCurrency?: string
-}
-
-interface LDEvent {
-  "@type": string
-  name: string
-  startDate: string       // ISO 8601, e.g. "2026-05-03T19:30:00-05:00"
-  endDate?: string
-  description?: string
-  image?: string | { url?: string }
-  url?: string
-  offers?: LDOffer | LDOffer[]
-  location?: { name?: string; address?: { streetAddress?: string } }
-}
-
-interface LDItemList {
-  "@type": string
-  itemListElement?: Array<{ "@type": string; item?: LDEvent } | LDEvent>
-}
-
-interface LDProfilePage {
-  "@type": string
-  mainEntity?: LDItemList
-}
-
-// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function parseDate(isoDate: string): string {
-  const d = new Date(isoDate)
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, "0")
-  const day = String(d.getDate()).padStart(2, "0")
-  return `${y}-${m}-${day}`
+const MONTH_MAP: Record<string, string> = {
+  jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06",
+  jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12",
 }
 
-function parseTime(isoDate: string): string {
-  const d = new Date(isoDate)
-  const h = d.getHours()
-  const min = d.getMinutes()
-  const period = h >= 12 ? "PM" : "AM"
-  const hour = h % 12 || 12
-  return `${hour}:${String(min).padStart(2, "0")} ${period}`
+function parseDate(text: string): string | null {
+  // Handles "Apr 25", "April 25, 2026", "Friday, April 25"
+  const m = text.match(/([A-Za-z]+)\.?\s+(\d{1,2})(?:,?\s*(\d{4}))?/)
+  if (!m) return null
+  const month = MONTH_MAP[m[1]!.toLowerCase().slice(0, 3)]
+  if (!month) return null
+  const day = m[2]!.padStart(2, "0")
+  const now = new Date()
+  const eventMonth = parseInt(month, 10)
+  const year = m[3]
+    ? m[3]
+    : eventMonth < now.getMonth() + 1
+      ? String(now.getFullYear() + 1)
+      : String(now.getFullYear())
+  return `${year}-${month}-${day}`
 }
 
-function parsePrice(offers: LDOffer | LDOffer[] | undefined): Event["price"] {
-  if (!offers) return "tbd"
-  const offer = Array.isArray(offers) ? offers[0] : offers
-  const low = offer.lowPrice ?? offer.price
-  const high = offer.highPrice ?? offer.price
-  if (low === 0 || low === "0") return "free"
-  const min = typeof low === "string" ? parseFloat(low) : (low as number)
-  const max = typeof high === "string" ? parseFloat(high) : (high as number)
-  if (!isNaN(min) && !isNaN(max) && max > 0) return { min, max }
-  if (!isNaN(min) && min > 0) return { min, max: min }
-  return "tbd"
-}
-
-function getImageUrl(image: LDEvent["image"]): string {
-  if (!image) return "/placeholder-event.jpg"
-  if (typeof image === "string") return image
-  return image.url ?? "/placeholder-event.jpg"
-}
-
-function stripHtml(html: string): string {
-  return html.replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim()
+function parseTime(text: string): string {
+  const m = text.match(/(\d{1,2}:\d{2}\s*[AP]M)/i)
+  if (!m) return "TBA"
+  return m[1]!.replace(/\s*([AP]M)/i, " $1").trim()
 }
 
 function isUpcoming(dateStr: string): boolean {
@@ -109,93 +63,15 @@ function isUpcoming(dateStr: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Extract JSON-LD from window.__SERVER_DATA__.jsonld (Eventbrite's current format)
-// ---------------------------------------------------------------------------
-
-/**
- * Eventbrite embeds structured data in a JS variable rather than a plain
- * <script type="application/ld+json"> tag. The "jsonld" key sits at the top
- * level of __SERVER_DATA__ and its value is a JSON array.
- *
- * We extract it by finding the start of the array and counting brackets to
- * locate the matching close — this handles nested JSON without a full parse
- * of the potentially-large __SERVER_DATA__ object.
- */
-function extractServerDataJsonLd(html: string): unknown[] {
-  try {
-    const keyIdx = html.indexOf('"jsonld":')
-    if (keyIdx === -1) return []
-    const arrStart = html.indexOf('[', keyIdx)
-    if (arrStart === -1) return []
-    let depth = 0
-    let i = arrStart
-    for (; i < html.length; i++) {
-      const ch = html[i]
-      if (ch === '[') depth++
-      else if (ch === ']') {
-        depth--
-        if (depth === 0) break
-      }
-    }
-    return JSON.parse(html.slice(arrStart, i + 1)) as unknown[]
-  } catch {
-    return []
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Shared event processing
-// ---------------------------------------------------------------------------
-
-function processLdItems(items: Array<{ "@type": string; item?: LDEvent } | LDEvent>): Event[] {
-  const events: Event[] = []
-  for (const item of items) {
-    try {
-      // Items can be bare LDEvent or wrapped in { "@type": "ListItem", item: LDEvent }
-      const ev: LDEvent = ("item" in item && item.item) ? item.item : (item as LDEvent)
-      if (ev["@type"] !== "Event" || !ev.name || !ev.startDate) continue
-
-      const date = parseDate(ev.startDate)
-      if (!isUpcoming(date)) continue
-
-      const artist = ev.name.trim()
-      const description = ev.description
-        ? stripHtml(ev.description).slice(0, 300)
-        : `${artist} live at the Cedar Cultural Centre.`
-
-      events.push({
-        id: `cedar-${artist.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${date}`,
-        artist,
-        venue: CEDAR_VENUE,
-        date,
-        time: parseTime(ev.startDate),
-        price: parsePrice(ev.offers),
-        ageRestriction: "all-ages",
-        genres: ["world"],
-        mood: genreMoodMap["world"] ?? "chill",
-        ticketUrl: ev.url ?? ORGANIZER_URL,
-        imageUrl: getImageUrl(ev.image),
-        description,
-        popularity: 50,
-        isLocalArtist: false,
-      })
-    } catch {
-      // Skip malformed events
-    }
-  }
-  return events
-}
-
-// ---------------------------------------------------------------------------
 // Fetch & parse
 // ---------------------------------------------------------------------------
 
 export async function scrapeCedar(): Promise<Event[]> {
   let html: string
   try {
-    const res = await fetch(ORGANIZER_URL, {
+    const res = await fetch(EVENTS_URL, {
       cache: "no-store",
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; TwinCitiesMusic/1.0)" },
+      headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" },
     })
     if (!res.ok) throw new Error(`Cedar fetch failed: ${res.status}`)
     html = await res.text()
@@ -204,47 +80,63 @@ export async function scrapeCedar(): Promise<Event[]> {
   }
 
   const $ = cheerio.load(html)
-  let allEvents: Event[] = []
+  const events: Event[] = []
 
-  // Strategy 1: standard <script type="application/ld+json"> tags (legacy / future)
-  $('script[type="application/ld+json"]').each((_, el) => {
+  // div.event-item — one per event
+  //   h3 > a[href="/events/slug"] — title + URL
+  //   div.event-date              — "Apr 25" or "April 25"
+  //   time                        — full date text fallback
+  $("div.event-item, article.event-item, .event-item").each((_, el) => {
     try {
-      const data: LDProfilePage = JSON.parse($(el).html() ?? "")
-      if (data["@type"] === "ProfilePage" && data.mainEntity?.["@type"] === "ItemList") {
-        allEvents = allEvents.concat(
-          processLdItems(data.mainEntity.itemListElement ?? [])
-        )
-      }
+      const $el = $(el)
+
+      // Title and URL
+      const linkEl = $el.find("h3 a, h2 a, h4 a").first()
+      const title = linkEl.text().trim()
+      if (!title) return
+
+      const href = linkEl.attr("href") ?? ""
+      const ticketUrl = href.startsWith("http") ? href : `${BASE_URL}${href}`
+
+      // Date — try event-date div first, then <time> element, then full text
+      const dateText = $el.find(".event-date, time").first().text().trim()
+        || $el.text().trim()
+      const date = parseDate(dateText)
+      if (!date || !isUpcoming(date)) return
+
+      // Time
+      const time = parseTime($el.text())
+
+      // Image
+      const imgSrc = $el.find("img").first().attr("src") ?? ""
+      const imageUrl = imgSrc
+        ? (imgSrc.startsWith("http") ? imgSrc : `${BASE_URL}${imgSrc}`)
+        : "/placeholder-event.jpg"
+
+      events.push({
+        id: `cedar-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${date}`,
+        artist: title,
+        venue: CEDAR_VENUE,
+        date,
+        time,
+        price: "tbd",
+        ageRestriction: "all-ages",
+        genres: ["world"],
+        mood: genreMoodMap["world"] ?? "chill",
+        ticketUrl,
+        imageUrl,
+        description: `${title} live at the Cedar Cultural Centre.`,
+        popularity: 50,
+        isLocalArtist: false,
+      })
     } catch {
       // skip
     }
   })
 
-  // Strategy 2: Eventbrite's current __SERVER_DATA__.jsonld embed
-  if (allEvents.length === 0) {
-    const ldItems = extractServerDataJsonLd(html)
-
-    // The array may contain bare ListItems (Events) or a ProfilePage wrapper
-    for (const item of ldItems) {
-      const obj = item as Record<string, unknown>
-      if (obj["@type"] === "ProfilePage") {
-        const mainEntity = obj.mainEntity as LDItemList | undefined
-        if (mainEntity?.["@type"] === "ItemList") {
-          allEvents = allEvents.concat(
-            processLdItems(mainEntity.itemListElement ?? [])
-          )
-        }
-      } else if (obj["@type"] === "ListItem" || obj["@type"] === "Event") {
-        allEvents = allEvents.concat(
-          processLdItems([obj as { "@type": string; item?: LDEvent } | LDEvent])
-        )
-      }
-    }
-  }
-
   // Deduplicate by id
   const seen = new Set<string>()
-  return allEvents.filter((e) => {
+  return events.filter((e) => {
     if (seen.has(e.id)) return false
     seen.add(e.id)
     return true

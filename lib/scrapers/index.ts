@@ -187,11 +187,9 @@ export async function scrapeAllVenues(): Promise<Event[]> {
     }
   }
 
-  // Email alert for always-active scrapers that are broken — non-blocking
-  const broken = results.filter(
-    (r) => alwaysActiveNames.has(r.name) && r.status !== "ok"
-  )
-  sendEmailAlert(broken).catch(() => {/* intentionally ignored */})
+  // Email alerts are sent from /api/scraper-health only — not here.
+  // scrapeAllVenues() runs inside unstable_cache but Vercel cold-starts reset
+  // module-level state on every invocation, making per-day dedup unreliable.
 
   const events: Event[] = []
   for (const r of results) {
